@@ -8,14 +8,17 @@ urlpatterns = [
     path('users/otp', views.get_otp, name='get_otp'),
 
     # Utilisateurs
+    path('user-details/<int:userId>', views.get_user_details, name='register'),
     path('users/<int:userId>', views.delete_account, name='delete_account'),
     path('users/upload', views.upload_photo, name='upload_photo'),
-    path('users/info', views.update_password, name='update_password'),
+    path('users/update_password', views.update_password, name='update_password'),
+    path('users/update_profile', views.update_profile, name='update_profile'),
     path('users/getImage', views.get_user_image, name='get_user_image'),
 
     # Produits
     path('products/insert', views.insert_product, name='insert_product'),
     path('products', views.get_products, name='get_products'),
+    path('all_products', views.get_all_products, name='get_all_products'),
     path('products/search', views.search_for_product, name='search_for_product'),
 
     # Favoris

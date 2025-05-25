@@ -8,7 +8,12 @@ class Product(models.Model):
     quantity = models.IntegerField(default=0)
     supplier = models.CharField(max_length=255)
     category = models.CharField(max_length=100)
-    image = models.ImageField(upload_to='products/')
+    # image = models.ImageField(upload_to='products/')
+    # Nouvelle ligne :
+    image = models.URLField(max_length=500, blank=True, null=True)  # Recommandé pour des URLs
+
+    # Si URLField pose des problèmes de validation ou de flexibilité, vous pouvez utiliser CharField :
+    # image = models.CharField(max_length=500, blank=True, null=True)
 
     def __str__(self):
         return self.product_name

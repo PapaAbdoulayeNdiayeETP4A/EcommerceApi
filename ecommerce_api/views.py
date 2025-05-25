@@ -83,6 +83,29 @@ def login_user(request):
         }, status=status.HTTP_401_UNAUTHORIZED)
 
 
+@api_view(['GET'])
+def get_user_details(request, userId):
+    """
+    Récupère les informations détaillées d'un utilisateur spécifique.
+
+    Args:
+        request: La requête HTTP
+        userId: L'ID de l'utilisateur à récupérer
+
+    Returns:
+        Les informations complètes de l'utilisateur au format JSON
+    """
+    try:
+        user = get_object_or_404(User, id=userId)
+        serializer = UserSerializer(user)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    except Exception as e:
+        return Response({
+            'success': False,
+            'message': f'Erreur lors de la récupération des données utilisateur: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
 # OTP
 @api_view(['GET'])
 @permission_classes([AllowAny])
@@ -153,6 +176,37 @@ def update_password(request):
     return Response(status=status.HTTP_200_OK)
 
 
+@api_view(['PUT'])
+def update_profile(request):
+    """
+    Endpoint pour mettre à jour le nom d'utilisateur et l'email d'un utilisateur
+    """
+    username = request.query_params.get('username')
+    email = request.query_params.get('email')
+    user_id = request.query_params.get('id')
+
+    # Validation des paramètres
+    if not all([username, email, user_id]):
+        return Response({"error": "Tous les paramètres sont requis"}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        user = get_object_or_404(User, id=user_id)
+
+        # Vérification si l'email existe déjà pour un autre utilisateur
+        if User.objects.filter(email=email).exclude(id=user_id).exists():
+            return Response({"error": "Cette adresse email est déjà utilisée"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Mise à jour des informations
+        user.username = username
+        user.email = email
+        user.save()
+
+        return Response(status=status.HTTP_200_OK)
+
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
 @api_view(['GET'])
 def get_user_image(request):
     user_id = request.query_params.get('id')
@@ -198,6 +252,13 @@ def get_products(request):
     result_page = paginator.paginate_queryset(products, request)
 
     serializer = ProductSerializer(result_page, many=True)
+    return Response({"products": serializer.data})
+
+
+@api_view(['GET'])
+def get_all_products(request):
+    products = Product.objects.all()
+    serializer = ProductSerializer(products, many=True)
     return Response({"products": serializer.data})
 
 
@@ -279,27 +340,38 @@ def get_favorites(request):
 @parser_classes([JSONParser])
 def add_to_cart(request):
     try:
-        cart_data = request.data.get('cart')
+        # The request.data already contains the cart information directly
+        cart_data = request.data
 
-        # Créer un objet Cart avec la chaîne JSON
-        cart = Cart(cart=cart_data)
+        # Extract the information directly from request.data
+        user_id = cart_data.get('userId')
+        product_id = cart_data.get('productId')
+        quantity = cart_data.get('quantity', 1)
 
-        # Extraire les informations de la chaîne JSON pour les champs supplémentaires
-        cart_json = json.loads(cart_data)
-        cart.userId = cart_json.get('userId')
-        cart.productId = cart_json.get('productId')
-        cart.quantity = cart_json.get('quantity', 1)
+        # Validate required fields
+        if not user_id or not product_id:
+            return Response({'error': 'userId and productId are required'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Vérifier si le produit existe déjà dans le panier
-        existing_cart = Cart.objects.filter(userId=cart.userId, productId=cart.productId).first()
+        # Check if the product already exists in the cart
+        existing_cart = Cart.objects.filter(userId=user_id, productId=product_id).first()
+
         if existing_cart:
-            existing_cart.quantity = cart.quantity
-            existing_cart.cart = cart_data
+            # Update existing cart item
+            existing_cart.quantity = quantity
+            existing_cart.cart = json.dumps(cart_data)  # Store as JSON string if needed
             existing_cart.save()
         else:
+            # Create new cart item
+            cart = Cart(
+                userId=user_id,
+                productId=product_id,
+                quantity=quantity,
+                cart=json.dumps(cart_data)  # Store as JSON string if needed
+            )
             cart.save()
 
-        return Response(status=status.HTTP_200_OK)
+        return Response({'message': 'Item added to cart successfully'}, status=status.HTTP_200_OK)
+
     except Exception as e:
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
