@@ -1,7 +1,8 @@
+from django.core.paginator import Paginator
 from django.shortcuts import get_object_or_404
 from django.http import HttpResponse
 from django.utils import timezone
-from rest_framework import status
+from rest_framework import status, generics
 from rest_framework.decorators import api_view, parser_classes, permission_classes
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.response import Response
@@ -17,12 +18,12 @@ from django.core.files.storage import default_storage
 from django.core.mail import send_mail
 from .models import (
     Product, UserProfile, Favorite, Cart, History,
-    Review, Poster, Shipping, Order, OrderItem, Otp
+    Review, Poster, Shipping, Order, OrderItem, Otp, Notification
 )
 from .serializers import (
     UserSerializer, ProductSerializer, FavoriteSerializer,
     HistorySerializer, ReviewSerializer, PosterSerializer, ShippingSerializer,
-    OrderSerializer, OtpSerializer
+    OrderSerializer, OtpSerializer, NotificationListSerializer
 )
 
 
@@ -297,7 +298,6 @@ def search_for_product(request):
 def add_favorite(request):
     serializer = FavoriteSerializer(data=request.data)
     if serializer.is_valid():
-        # Vérifier si le favori existe déjà
         user_id = serializer.validated_data['userId']
         product_id = serializer.validated_data['productId']
 
@@ -305,6 +305,17 @@ def add_favorite(request):
             userId=user_id,
             productId=product_id
         )
+
+        if created:
+            user = User.objects.get(id=user_id)
+            product = Product.objects.get(id=product_id)
+            Notification.objects.create(
+                user=user,
+                title="Produit ajouté à vos favoris",
+                message=f"Le produit '{product.product_name}' a été ajouté à vos favoris.",
+                type="general",
+                data={"product_id": product_id}
+            )
 
         return Response(status=status.HTTP_200_OK)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -451,7 +462,19 @@ def get_products_in_history(request):
 def add_review(request):
     serializer = ReviewSerializer(data=request.data)
     if serializer.is_valid():
-        serializer.save()
+        review = serializer.save()
+
+        user = User.objects.get(id=review.userId)
+        product = Product.objects.get(id=review.productId)
+
+        Notification.objects.create(
+            user=user,
+            title="Avis publié",
+            message=f"Votre avis sur le produit '{product.product_name}' a été publié.",
+            type="general",
+            data={"product_id": product.id}
+        )
+
         return Response(status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -491,6 +514,16 @@ def add_shipping_address(request):
     serializer = ShippingSerializer(data=request.data)
     if serializer.is_valid():
         shipping = serializer.save()
+
+        user = User.objects.get(id=shipping.userId)
+        Notification.objects.create(
+            user=user,
+            title="Nouvelle adresse ajoutée",
+            message="Votre nouvelle adresse de livraison a été enregistrée.",
+            type="account",
+            data={"address_id": shipping.id}
+        )
+
         return Response(status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -524,6 +557,132 @@ def order_product(request):
                 productId=product_data.get('productId')
             ).delete()
 
+        user = User.objects.get(id=data.get('userId'))
+        Notification.objects.create(
+            user=user,
+            title="Nouvelle commande passée",
+            message=f"Votre commande #{order.id} a été créée avec succès.",
+            type="order",
+            data={
+                "order_id": order.id,
+                "total": float(order.total_price),
+                "status": order.status
+            }
+        )
+
         return Response(status=status.HTTP_201_CREATED)
     except Exception as e:
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class NotificationListView(generics.ListAPIView):
+    serializer_class = NotificationListSerializer
+    #permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return Notification.objects.filter(user=self.request.user)
+
+    def list(self, request, *args, **kwargs):
+        user_id = (request.GET.get('userId'))
+        page = int(request.GET.get('page', 1))
+        per_page = 20
+
+        try:
+            user = User.objects.get(id=user_id)
+
+            # Récupérer toutes les notifications de l'utilisateur
+            notifications = Notification.objects.filter(user=user)
+
+            # Compter les notifications non lues
+            unread_count = notifications.filter(is_read=False).count()
+            total_count = notifications.count()
+
+            # Pagination
+            paginator = Paginator(notifications, per_page)
+            notifications_page = paginator.get_page(page)
+
+            # Sérialiser les données
+            serializer = self.get_serializer(notifications_page, many=True)
+
+            return Response({
+                'success': True,
+                'message': 'Notifications récupérées avec succès',
+                'notifications': serializer.data,
+                'total_pages': paginator.num_pages,
+                'current_page': page,
+                'total_count': total_count,
+                'unread_count': unread_count
+            })
+        except User.DoesNotExist:
+            return Response({
+                'success': False,
+                'message': 'Accès non autorisé'
+            }, status=status.HTTP_403_FORBIDDEN)
+
+
+@api_view(['PUT'])
+#@permission_classes([IsAuthenticated])
+def mark_notification_as_read(request, notificationId):
+    try:
+        notification = get_object_or_404(Notification, id=notificationId, user=request.user)
+        notification.is_read = True
+        notification.save()
+
+        return Response({
+            'success': True,
+            'message': 'Notification marquée comme lue'
+        })
+
+    except Notification.DoesNotExist:
+        return Response({
+            'success': False,
+            'message': 'Notification non trouvée'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        return Response({
+            'success': False,
+            'message': f'Erreur: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['DELETE'])
+#@permission_classes([IsAuthenticated])
+def delete_notification(request, notificationId):
+    try:
+        notification = get_object_or_404(Notification, id=notificationId, user=request.user)
+        notification.delete()
+
+        return Response({
+            'success': True,
+            'message': 'Notification supprimée'
+        })
+
+    except Notification.DoesNotExist:
+        return Response({
+            'success': False,
+            'message': 'Notification non trouvée'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        return Response({
+            'success': False,
+            'message': f'Erreur: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+#@permission_classes([IsAuthenticated])
+def mark_all_as_read(request):
+    try:
+        notifications = Notification.objects.filter(user=request.user, is_read=False)
+        notifications.update(is_read=True)
+
+        return Response({
+            'success': True,
+            'message': f'{notifications.count()} notifications marquées comme lues'
+        })
+
+    except Exception as e:
+        return Response({
+            'success': False,
+            'message': f'Erreur: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

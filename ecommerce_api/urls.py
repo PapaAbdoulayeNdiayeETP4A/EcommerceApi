@@ -47,4 +47,10 @@ urlpatterns = [
     path('orders/get', views.get_orders, name='get_orders'),
     path('address/add', views.add_shipping_address, name='add_shipping_address'),
     path('orders/add', views.order_product, name='order_product'),
+
+    # Notifications
+    path('notifications', views.NotificationListView.as_view(), name='notification-list'),
+    path('notifications/<int:notificationId>/read', views.mark_notification_as_read, name='mark-as-read'),
+    path('notifications/<int:notificationId>', views.delete_notification, name='delete-notification'),
+    path('notifications/mark-all-read', views.mark_all_as_read, name='mark-all-read'),
 ]

@@ -2,7 +2,7 @@ from rest_framework import serializers
 from django.contrib.auth.models import User
 from .models import (
     Product, UserProfile, Favorite, Cart, History,
-    Review, Poster, Shipping, Order, OrderItem, Otp
+    Review, Poster, Shipping, Order, OrderItem, Otp, Notification
 )
 
 
@@ -147,3 +147,16 @@ class LoginApiResponse(serializers.Serializer):
     message = serializers.CharField()
     user_id = serializers.IntegerField(required=False)
     email = serializers.EmailField(required=False)
+
+
+class NotificationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Notification
+        fields = ['id', 'user', 'title', 'message', 'type', 'is_read', 'data', 'created_at']
+        read_only_fields = ['id', 'created_at']
+
+
+class NotificationListSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Notification
+        fields = ['id', 'title', 'message', 'type', 'is_read', 'created_at']

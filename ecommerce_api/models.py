@@ -1,5 +1,6 @@
 from django.db import models
 from django.contrib.auth.models import User
+from django.utils import timezone
 
 
 class Product(models.Model):
@@ -137,3 +138,30 @@ class Otp(models.Model):
 
     def __str__(self):
         return f"OTP for {self.email}"
+
+
+class Notification(models.Model):
+    TYPE_CHOICES = [
+        ('order', 'Commande'),
+        ('promotion', 'Promotion'),
+        ('payment', 'Paiement'),
+        ('shipping', 'Livraison'),
+        ('account', 'Compte'),
+        ('general', 'Général'),
+    ]
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='notifications')
+    title = models.CharField(max_length=255)
+    message = models.TextField()
+    type = models.CharField(max_length=20, choices=TYPE_CHOICES, default='general')
+    is_read = models.BooleanField(default=False)
+    data = models.JSONField(null=True, blank=True)  # Pour données supplémentaires
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        db_table = 'notifications'
+
+    def __str__(self):
+        return f"{self.title} - {self.user.username}"
